@@ -1,0 +1,629 @@
+<title>Кабинет экономиста</title>
+<meta name="description" content="Кликабельный прототип интерфейса для расчёта тарифной сметы: загрузка любых файлов, раскрывающийся живой статус, свайп нераспознанных документов с зумом и готовый результат.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap">
+<style>
+:root{
+  --paper:#ffffff; --alt:#f6f5f2; --alt2:#f0efea;
+  --ink:#141416; --ink-soft:#3c3c42; --muted:#8a8a8f;
+  --line:#e7e6e1; --line-strong:#d8d7d2;
+  --gold:#9a7620; --gold-soft:#fbf3d6; --gold-line:#e7d69f;
+  --ok:#2e7a5f; --ok-bg:#e6f1eb; --warn:#9a7620; --warn-bg:#faf1d6;
+  --crit:#b23a3a; --crit-bg:#f7e4e2;
+  --shadow:0 1px 2px rgba(20,20,25,.05),0 10px 30px rgba(20,20,25,.06);
+}
+*{box-sizing:border-box}
+html{color-scheme:light}
+body{margin:0;background:var(--alt);color:var(--ink);
+  font-family:"Montserrat",system-ui,sans-serif;font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+button{font-family:inherit;cursor:pointer}
+input,select{font-family:inherit}
+.mono{font-variant-numeric:tabular-nums}
+
+.protonav{position:sticky;top:0;z-index:40;background:var(--paper);border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:5px;padding:8px 16px;flex-wrap:wrap}
+.protonav .lbl{font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-right:6px}
+.protonav button{border:1px solid var(--line);background:var(--paper);color:var(--ink-soft);
+  font-size:12px;font-weight:500;padding:5px 12px;border-radius:999px}
+.protonav button .num{color:var(--muted);font-weight:600;margin-right:5px}
+.protonav button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.protonav button.on .num{color:var(--gold-line)}
+
+.app{max-width:1080px;margin:0 auto;padding:20px 16px 70px}
+.topstrip{display:flex;align-items:center;gap:11px;margin-bottom:24px;min-height:26px}
+.livedot{width:11px;height:11px;border-radius:50%;background:var(--line-strong);flex:0 0 auto;position:relative}
+.livedot.gold{background:var(--gold)} .livedot.red{background:var(--crit)} .livedot.green{background:var(--ok)}
+.livedot.pulse::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:2px solid currentColor;
+  color:inherit;animation:ring 1.1s ease-out infinite;opacity:0}
+.livedot.gold.pulse::after{border-color:var(--gold)} .livedot.red.pulse::after{border-color:var(--crit)}
+@keyframes ring{0%{transform:scale(.6);opacity:.7}100%{transform:scale(1.8);opacity:0}}
+.topstrip .ctx{font-size:13.5px;color:var(--ink-soft);font-weight:500}
+.topstrip .ctx b{color:var(--ink);font-weight:600}
+@media(prefers-reduced-motion:reduce){.livedot.pulse::after{animation:none}}
+
+.screen{display:none;animation:fade .28s ease}
+.screen.on{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+h1{font-size:25px;font-weight:700;letter-spacing:-.01em;margin:0 0 4px}
+.lede{color:var(--muted);font-size:14px;margin:0 0 22px}
+.row-between{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px}
+
+.btn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--ink);background:var(--ink);
+  color:#fff;font-weight:600;font-size:14px;padding:11px 20px;border-radius:10px;transition:.15s}
+.btn:hover{opacity:.88}.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn.ghost{background:transparent;color:var(--ink);border-color:var(--line-strong)}
+.btn.ghost:hover{background:var(--paper);opacity:1}
+.btn.gold{background:var(--gold);border-color:var(--gold);color:#fff}
+.btn.sm{padding:8px 14px;font-size:13px}
+
+.panel{background:var(--paper);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}
+.pad{padding:22px 24px}
+
+/* empty state */
+.empty{text-align:center;padding:60px 24px}
+.empty .ic{width:56px;height:56px;border-radius:14px;background:var(--alt);border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;margin:0 auto 16px;color:var(--muted)}
+.empty .t{font-weight:600;font-size:17px}
+.empty .s{color:var(--muted);font-size:14px;margin:6px 0 20px}
+
+/* task list (fills as you use it) */
+.task{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center;padding:16px 22px;border-top:1px solid var(--line)}
+.task:first-child{border-top:none}
+.task .tt{font-weight:600}.task .ts{color:var(--muted);font-size:12.5px;margin-top:2px}
+.pill{font-size:11.5px;font-weight:600;padding:5px 11px;border-radius:999px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.pill .d{width:6px;height:6px;border-radius:50%;background:currentColor}
+.pill.ok{background:var(--ok-bg);color:var(--ok)} .pill.run{background:var(--gold-soft);color:var(--gold)}
+.pill.need{background:var(--crit-bg);color:var(--crit)}
+
+/* upload */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.field label{display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:6px}
+.field input,.field select{width:100%;border:1px solid var(--line-strong);background:var(--paper);color:var(--ink);
+  border-radius:10px;padding:11px 13px;font-size:14px}
+.field input:focus,.field select:focus{outline:2px solid var(--gold-line);border-color:var(--gold)}
+.drop{border:1.5px dashed var(--line-strong);border-radius:14px;background:var(--alt);padding:34px 20px;
+  text-align:center;margin-top:18px;transition:.15s;cursor:pointer;display:block;width:100%}
+.drop:hover,.drop.over{border-color:var(--gold);background:var(--gold-soft)}
+.drop .ic{width:46px;height:46px;border-radius:12px;background:var(--paper);border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;margin:0 auto 12px;color:var(--ink-soft)}
+.drop .t{font-weight:600;font-size:15px}.drop .s{color:var(--muted);font-size:12.5px;margin-top:3px}
+.files{margin-top:16px;display:flex;flex-direction:column;gap:8px}
+.file{display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:var(--paper);font-size:13.5px}
+.file .fi{width:30px;height:30px;border-radius:7px;background:var(--alt);display:flex;align-items:center;justify-content:center;flex:0 0 auto;font-size:14px}
+.file .fn{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file .fm{color:var(--muted);font-size:12px;margin-left:auto;white-space:nowrap}
+.file .rm{margin-left:8px;color:var(--muted);border:none;background:none;font-size:16px;line-height:1}
+
+/* status */
+.statushead{display:flex;align-items:center;gap:13px;margin-bottom:4px}
+.statushead .livedot{width:13px;height:13px}
+.spinner{width:22px;height:22px;border:2.5px solid var(--line);border-top-color:var(--gold);border-radius:50%;animation:spin 1s linear infinite;flex:0 0 auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.spinner{animation:none}}
+.bignow{font-size:19px;font-weight:600;letter-spacing:-.01em}
+.progress{height:8px;background:var(--alt);border-radius:999px;overflow:hidden;margin:16px 0 6px;border:1px solid var(--line)}
+.progress .bar{height:100%;background:var(--gold);width:0%;transition:width .5s ease;border-radius:999px}
+.pcount{font-size:13px;color:var(--muted)}
+.steps{margin-top:20px;display:flex;flex-direction:column}
+.step{border-top:1px solid var(--line)}.step:first-child{border-top:none}
+.step-h{display:flex;align-items:center;gap:13px;padding:13px 4px;width:100%;background:none;border:none;text-align:left}
+.step-h .mk{width:26px;height:26px;border-radius:50%;flex:0 0 auto;display:flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:700;border:1.5px solid var(--line-strong);color:var(--muted);transition:.2s}
+.step-h .lab{font-size:14px;color:var(--muted);font-weight:500;flex:1}
+.step-h .chev{color:var(--muted);transition:transform .2s;font-size:12px}
+.step-h .sdot{width:8px;height:8px;border-radius:50%;background:transparent;flex:0 0 auto}
+.step.done .mk{background:var(--ok);border-color:var(--ok);color:#fff}
+.step.done .lab{color:var(--ink)}
+.step.active .mk{border-color:var(--gold);color:var(--gold)}
+.step.active .lab{color:var(--ink);font-weight:600}
+.step.updated .sdot{background:var(--gold);animation:blink 1.4s ease-out}
+@keyframes blink{0%{box-shadow:0 0 0 0 var(--gold-soft)}100%{box-shadow:0 0 0 7px transparent}}
+.step.open .step-h .chev{transform:rotate(180deg)}
+.step-body{display:none;padding:0 4px 15px 52px;font-size:13.5px;color:var(--ink-soft)}
+.step.open .step-body{display:block}
+.step-body .consider{margin-top:9px;background:var(--warn-bg);border-radius:8px;padding:9px 12px;font-size:12.5px;color:var(--ink)}
+.step-body .consider b{color:var(--warn);font-size:11px;letter-spacing:.03em}
+.step-body .waiting{color:var(--muted);font-style:italic}
+
+.alert{margin-top:20px;border:1px solid var(--crit);background:var(--crit-bg);border-radius:12px;padding:16px 18px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.alert .bx{width:30px;height:30px;border-radius:50%;background:var(--crit);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;flex:0 0 auto}
+.alert .txt{flex:1 1 240px}.alert .at{font-weight:600;color:var(--crit)}.alert .ad{font-size:13px;color:var(--ink-soft);margin-top:2px}
+
+/* unreadable swiper */
+.swipehead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+.swipehead .cnt{font-size:13px;color:var(--muted)}
+.swipehead .cnt b{color:var(--ink)}
+.deckwrap{position:relative;overflow:hidden}
+.card{display:grid;grid-template-columns:300px 1fr;gap:20px;will-change:transform,opacity}
+.docview{border:1px solid var(--line);border-radius:12px;background:var(--alt);padding:12px}
+.imgbox{position:relative;border-radius:8px;overflow:hidden;background:var(--paper);border:1px solid var(--line);cursor:zoom-in}
+.imgbox svg{display:block;width:100%;height:auto;filter:blur(1.1px)}
+.imgbox .zc{position:absolute;right:8px;bottom:8px;background:rgba(20,20,22,.72);color:#fff;border-radius:7px;
+  padding:5px 9px;font-size:11px;display:flex;align-items:center;gap:5px;pointer-events:none}
+.docview .cap{font-size:12px;color:var(--muted);margin-top:10px;text-align:center}
+.docview .cap b{color:var(--ink)}
+.entry .eh{font-weight:600;font-size:15px;margin-bottom:3px}
+.entry .es{font-size:12.5px;color:var(--muted);margin-bottom:14px}
+.miniform{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.navrow{display:flex;align-items:center;justify-content:space-between;margin-top:18px;gap:12px}
+.arrow{width:40px;height:40px;border-radius:10px;border:1px solid var(--line-strong);background:var(--paper);
+  display:flex;align-items:center;justify-content:center;color:var(--ink);font-size:18px}
+.arrow:disabled{opacity:.35}
+.dots{display:flex;gap:6px;align-items:center}
+.dots i{width:7px;height:7px;border-radius:50%;background:var(--line-strong);display:block;transition:.2s}
+.dots i.on{background:var(--gold);transform:scale(1.3)}
+.dots i.filled{background:var(--ok)}
+.dots i.excluded{background:var(--muted)}
+.hint{font-size:12.5px;color:var(--ink-soft);background:var(--alt);border:1px solid var(--line);border-radius:8px;
+  padding:10px 13px;margin-top:16px;display:flex;align-items:center;gap:8px}
+.hint b{color:var(--crit)}
+
+.docview.excluded{opacity:.55;filter:grayscale(.4)}
+.exbadge{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--ink-soft);background:var(--alt2);border:1px solid var(--line-strong);border-radius:999px;padding:4px 10px;margin-bottom:10px}
+.exbadge.auto{color:var(--gold);border-color:var(--gold-line);background:var(--gold-soft)}
+.es.exs{color:var(--ink-soft)}
+.exreason{font-size:12.5px;color:var(--ink-soft);background:var(--alt);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:2px}
+.excludebtn{margin-top:14px;color:var(--crit);border-color:var(--crit-bg)}
+.excludebtn:hover{background:var(--crit-bg)}
+
+/* zoom overlay */
+.zoom{position:fixed;inset:0;z-index:60;background:rgba(18,18,20,.82);display:none;padding:24px;
+  grid-template-columns:1fr 340px;gap:20px;animation:fade .2s ease}
+.zoom.on{display:grid}
+.zoom .zimg{background:#fff;border-radius:12px;overflow:auto;display:flex;align-items:center;justify-content:center;padding:12px}
+.zoom .zimg svg{width:140%;max-width:none;height:auto}
+.zoom .zpanel{background:var(--paper);border-radius:12px;padding:20px;overflow:auto}
+.zoom .zpanel .zt{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.zoom .zpanel h3{margin:5px 0 3px;font-size:17px}
+.zoom .zpanel .zs{font-size:12.5px;color:var(--muted);margin-bottom:16px}
+.zclose{position:absolute;top:18px;right:20px;background:rgba(255,255,255,.14);color:#fff;border:none;
+  width:38px;height:38px;border-radius:10px;font-size:18px}
+@media(max-width:760px){.zoom{grid-template-columns:1fr;overflow:auto}.zoom .zimg svg{width:100%}}
+
+/* results */
+.docgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:6px 0 26px}
+.docard{border:1px solid var(--line);border-radius:14px;padding:22px 24px;background:var(--paper);box-shadow:var(--shadow)}
+.docard.a{border-top:3px solid var(--ink)} .docard.b{border-top:3px solid var(--gold)}
+.docard .tag{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.docard h3{margin:8px 0 6px;font-size:19px}
+.docard p{margin:0 0 18px;font-size:13.5px;color:var(--muted)}
+.factline{display:flex;flex-wrap:wrap;gap:26px;padding:16px 4px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-bottom:22px}
+.fact .k{font-size:12px;color:var(--muted)}
+.fact .v{font-size:19px;font-weight:700;letter-spacing:-.01em}
+.fact .v small{font-size:13px;color:var(--muted);font-weight:600}
+.review .rt{font-weight:600;font-size:15px;display:flex;align-items:center;gap:8px;margin-bottom:2px}
+.review .rs{font-size:12.5px;color:var(--muted);margin-bottom:12px}
+.ritem{display:flex;gap:12px;padding:12px 0;border-top:1px solid var(--line);font-size:13.5px;color:var(--ink-soft)}
+.ritem:first-of-type{border-top:none}
+.ritem .rk{width:8px;height:8px;border-radius:50%;margin-top:6px;flex:0 0 auto}
+.ritem .rk.w{background:var(--warn)} .ritem .rk.c{background:var(--crit)}
+.note{font-size:12.5px;color:var(--muted);margin-top:18px;display:flex;align-items:center;gap:7px}
+
+@media(max-width:720px){
+  .grid2,.miniform,.docgrid,.card{grid-template-columns:1fr}
+  .task{grid-template-columns:1fr auto}
+}
+</style>
+
+<div class="protonav">
+  <span class="lbl">Прототип · экраны</span>
+  <button data-s="tasks" class="on"><span class="num">1</span>Сметы</button>
+  <button data-s="upload"><span class="num">2</span>Новая</button>
+  <button data-s="status"><span class="num">3</span>Обработка</button>
+  <button data-s="unread"><span class="num">4</span>Разбор</button>
+  <button data-s="result"><span class="num">5</span>Готово</button>
+</div>
+
+<div class="app">
+  <div class="topstrip">
+    <span class="livedot" id="live"></span>
+    <span class="ctx" id="ctx">Кабинет экономиста</span>
+  </div>
+
+  <!-- 1 TASKS -->
+  <div class="screen on" id="tasks">
+    <div class="row-between">
+      <div><h1>Сметы</h1><p class="lede" style="margin:0">Расчёты тарифов по вашим объектам</p></div>
+      <button class="btn" onclick="go('upload')">+ Новая смета</button>
+    </div>
+    <div class="panel" id="taskPanel">
+      <div class="empty" id="emptyState">
+        <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5" stroke-linecap="round"/></svg></div>
+        <div class="t">Пока нет расчётов</div>
+        <div class="s">Создайте смету — загрузите документы, остальное сделает система</div>
+        <button class="btn" onclick="go('upload')">Создать первую смету</button>
+      </div>
+      <div id="taskList"></div>
+    </div>
+  </div>
+
+  <!-- 2 UPLOAD -->
+  <div class="screen" id="upload">
+    <h1>Новая смета</h1>
+    <p class="lede">Заполните поля и загрузите документы в любом виде</p>
+    <div class="panel pad">
+      <div class="grid2">
+        <div class="field"><label>Объект / услуга</label><input id="fObj" type="text" placeholder="например, Теплоснабжение"></div>
+        <div class="field"><label>Населённый пункт</label><input id="fCity" type="text" placeholder="город или посёлок"></div>
+        <div class="field"><label>Период (год)</label><input id="fYear" type="text" placeholder="2025"></div>
+        <div class="field"><label>Вид услуги для раздельного учёта</label>
+          <select><option>Производство и передача тепловой энергии</option><option>Передача и распределение</option><option>Водоснабжение и водоотведение</option><option>Другое</option></select>
+        </div>
+      </div>
+      <input type="file" id="fileInput" multiple style="display:none">
+      <button type="button" class="drop" id="drop" onclick="document.getElementById('fileInput').click()">
+        <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 16V4m0 0L8 8m4-4l4 4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke-linecap="round"/></svg></div>
+        <div class="t">Нажмите или перетащите документы</div>
+        <div class="s">фото, сканы, PDF, Word, Excel, таблицы, архивы — любой формат, где есть данные</div>
+      </button>
+      <div class="files" id="fileList"></div>
+      <div style="display:flex;gap:12px;margin-top:22px">
+        <button class="btn" id="startBtn" onclick="startRun()">Начать обработку</button>
+        <button class="btn ghost" onclick="go('tasks')">Отмена</button>
+      </div>
+    </div>
+    <p class="note">Система сама распознает файлы, разложит затраты по статьям и посчитает смету. Вам покажут только то, что требует решения.</p>
+  </div>
+
+  <!-- 3 STATUS -->
+  <div class="screen" id="status">
+    <h1>Обработка</h1>
+    <p class="lede" id="statusSub">Расчёт идёт</p>
+    <div class="panel pad">
+      <div class="statushead">
+        <span class="livedot" id="statusDot"></span>
+        <div class="spinner" id="spin"></div>
+        <div class="bignow" id="nowStep">Распознаю документы…</div>
+      </div>
+      <div class="progress"><div class="bar" id="bar"></div></div>
+      <div class="pcount"><span class="mono" id="pcount">0</span> из <span class="mono" id="ptotal">0</span> документов обработано</div>
+      <div class="steps" id="steps"></div>
+      <div class="alert" id="alert" style="display:none">
+        <div class="bx">!</div>
+        <div class="txt"><div class="at">Есть нераспознанные документы</div><div class="ad">Расчёт на паузе — разберите их, чтобы продолжить.</div></div>
+        <button class="btn sm" onclick="go('unread')">Разобрать</button>
+      </div>
+    </div>
+    <p class="note">Статус обновляется сам — обновлять страницу не нужно. Нажмите на номер этапа, чтобы раскрыть подробности.</p>
+  </div>
+
+  <!-- 4 UNREAD -->
+  <div class="screen" id="unread">
+    <h1>Разбор документов</h1>
+    <p class="lede">Пролистайте нераспознанные документы и впишите данные — или уберите документ из цикла, если он не нужен для сметы. Пока не разберёте все — расчёт не продолжится</p>
+    <div class="panel pad">
+      <div class="swipehead">
+        <div class="cnt">Документ <b><span id="curIdx">1</span></b> из <b><span id="curTotal">5</span></b> · осталось: <b id="curLeft">5</b></div>
+        <div class="dots" id="dots"></div>
+      </div>
+      <div class="deckwrap">
+        <div class="card" id="card"></div>
+      </div>
+      <div class="navrow">
+        <button class="arrow" id="prevBtn" onclick="move(-1)" aria-label="Предыдущий">‹</button>
+        <div class="hint"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 9v4m0 4h.01M10.3 3.9l-8 14A2 2 0 004 21h16a2 2 0 001.7-3l-8-14a2 2 0 00-3.4 0z" stroke-linecap="round" stroke-linejoin="round"/></svg>Свайпните или стрелками · данные сохраняются к каждому документу отдельно · нераспознанный документ можно исключить из расчёта</div>
+        <button class="arrow" id="nextBtn" onclick="move(1)" aria-label="Следующий">›</button>
+      </div>
+      <div style="margin-top:18px;text-align:right">
+        <button class="btn" id="finishUnread" onclick="resolveAll()" disabled>Продолжить расчёт</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5 RESULT -->
+  <div class="screen" id="result">
+    <div class="row-between">
+      <div><h1>Смета готова</h1><p class="lede" style="margin:0" id="resSub">Расчёт завершён</p></div>
+      <span class="pill ok" style="font-size:13px"><span class="d"></span>Проверено · сошлось до тенге</span>
+    </div>
+    <div class="docgrid">
+      <div class="docard a">
+        <div class="tag">Документ 1 · для сдачи</div>
+        <h3>Готовая смета</h3>
+        <p>Заполненные формы приложений приказа №90, смета по статьям, тариф и пояснительная записка. Готово на подпись и подачу.</p>
+        <button class="btn">Скачать</button>
+      </div>
+      <div class="docard b">
+        <div class="tag">Документ 2 · для вас</div>
+        <h3>Объяснительная</h3>
+        <p>Как вышла каждая цифра, ссылки на первичку и подсказки, как защищать смету перед регулятором.</p>
+        <button class="btn gold">Открыть</button>
+      </div>
+    </div>
+
+    <div class="factline">
+      <div class="fact"><div class="k">Тариф</div><div class="v mono">9 842 <small>₸/Гкал</small></div></div>
+      <div class="fact"><div class="k">Итог сметы</div><div class="v mono">418,6 <small>млн ₸</small></div></div>
+      <div class="fact"><div class="k">Документов учтено</div><div class="v mono">214</div></div>
+    </div>
+
+    <div class="review">
+      <div class="rt">Требует вашего решения</div>
+      <div class="rs">Система всё посчитала — осталось подтвердить спорные места</div>
+      <div class="ritem"><span class="rk w"></span><div>Консультационные услуги (1,2 млн ₸) — на грани по Главе 13. Решите: включать в тариф или нет.</div></div>
+      <div class="ritem"><span class="rk w"></span><div>Возможный дубль: счёт №4471 встречается дважды — взят один раз, подтвердите.</div></div>
+      <div class="ritem"><span class="rk c"></span><div>Документы, введённые вручную — проверьте суммы, которые вы вписали при разборе.</div></div>
+    </div>
+
+    <p class="note"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M13 2L3 14h7l-1 8 11-13h-7l1-7z" stroke-linecap="round" stroke-linejoin="round"/></svg>Каждая цифра в смете кликается до исходного документа, из которого она взята.</p>
+    <div style="margin-top:20px"><button class="btn ghost" onclick="go('tasks')">← К списку смет</button></div>
+  </div>
+</div>
+
+<!-- ZOOM overlay -->
+<div class="zoom" id="zoom">
+  <button class="zclose" onclick="closeZoom()">✕</button>
+  <div class="zimg" id="zimg"></div>
+  <div class="zpanel">
+    <div class="zt">Документ на экране</div>
+    <h3 id="zTitle">Счёт-фактура</h3>
+    <div class="zs" id="zSub">файл · не распознано автоматически</div>
+    <div class="miniform" id="zForm"></div>
+    <p class="note" style="margin-top:16px">Данные привязаны именно к этому документу. Увеличивайте — поля не пропадут.</p>
+  </div>
+</div>
+
+<script>
+/* ---------- navigation ---------- */
+const screens=["tasks","upload","status","unread","result"];
+let jobActive=false;
+function setLive(cls,ctx){
+  const l=document.getElementById("live");
+  l.className="livedot"+(cls?(" "+cls+" pulse"):"");
+  if(ctx!==undefined) document.getElementById("ctx").innerHTML=ctx;
+}
+function go(id){
+  screens.forEach(s=>document.getElementById(s).classList.toggle("on",s===id));
+  document.querySelectorAll(".protonav button").forEach(b=>b.classList.toggle("on",b.dataset.s===id));
+  window.scrollTo({top:0,behavior:"smooth"});
+  if(id==="unread") renderCard(0,true);
+}
+document.querySelectorAll(".protonav button").forEach(b=>b.addEventListener("click",()=>go(b.dataset.s)));
+
+/* ---------- upload ---------- */
+let picked=[];
+const fmtSize=b=>b>1048576?(b/1048576).toFixed(1)+" МБ":Math.max(1,Math.round(b/1024))+" КБ";
+function iconFor(name){const e=(name.split(".").pop()||"").toLowerCase();
+  if(["jpg","jpeg","png","heic","tiff","webp"].includes(e))return"🖼";
+  if(e==="pdf")return"📕";if(["xls","xlsx","csv"].includes(e))return"📊";
+  if(["doc","docx"].includes(e))return"📘";if(["zip","rar","7z"].includes(e))return"🗂";return"📄";}
+function renderFiles(){
+  const l=document.getElementById("fileList");l.innerHTML="";
+  picked.forEach((f,i)=>{
+    const d=document.createElement("div");d.className="file";
+    d.innerHTML=`<div class="fi">${iconFor(f.name)}</div><div class="fn">${f.name}</div><div class="fm">${f.size?fmtSize(f.size):""}</div><button class="rm" title="убрать">×</button>`;
+    d.querySelector(".rm").onclick=()=>{picked.splice(i,1);renderFiles();};
+    l.appendChild(d);
+  });
+  document.getElementById("startBtn").disabled=picked.length===0;
+}
+document.getElementById("fileInput").addEventListener("change",e=>{
+  for(const f of e.target.files) picked.push({name:f.name,size:f.size});
+  renderFiles();e.target.value="";
+});
+const drop=document.getElementById("drop");
+["dragover","dragenter"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("over");}));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("over");}));
+drop.addEventListener("drop",e=>{for(const f of e.dataTransfer.files)picked.push({name:f.name,size:f.size});renderFiles();});
+renderFiles();
+
+/* ---------- job / status ---------- */
+const STAGES=[
+  {k:"ocr",lab:"Проверяю и распознаю документы",done:"Распознано 213 из 214 документов.",note:"2 файла требуют внимания: 1 нечитаем и нужен ручной ввод, 1 система сама определила как приказ (не финансовый документ) и исключила из сметы."},
+  {k:"ext",lab:"Вытаскиваю суммы и реквизиты",done:"Извлечено 1 842 позиции затрат с привязкой к документам.",note:""},
+  {k:"dup",lab:"Убираю дубли по номерам чеков и счетов",done:"Найден 1 возможный дубль (счёт №4471) — взят один раз.",note:"Подтвердите дубль в конце."},
+  {k:"cls",lab:"Раскладываю затраты по статьям (приказ №90)",done:"Затраты разложены по статьям сметы.",note:"3 позиции спорные по Главе 13 — нужно ваше решение."},
+  {k:"calc",lab:"Считаю смету и тариф",done:"Смета посчитана: итог 418,6 млн ₸, тариф 9 842 ₸/Гкал.",note:""},
+  {k:"aud",lab:"Проверяю расчёт вторым независимым контролем",done:"Второй контроль сошёлся до тенге. У каждой цифры есть источник.",note:""}
+];
+let total=214, done=0, timer=null;
+function buildSteps(){
+  const c=document.getElementById("steps");c.innerHTML="";
+  STAGES.forEach((s,i)=>{
+    const el=document.createElement("div");el.className="step"+(i===0?" active":"");el.dataset.k=s.k;
+    el.innerHTML=`<button class="step-h" onclick="toggleStep(this)"><span class="mk">${i+1}</span><span class="lab">${s.lab}</span><span class="sdot"></span><span class="chev">▾</span></button><div class="step-body"><span class="waiting">Ожидает…</span></div>`;
+    c.appendChild(el);
+  });
+}
+function toggleStep(btn){btn.parentElement.classList.toggle("open");}
+function stepDone(i){
+  const el=document.querySelectorAll("#steps .step")[i];if(!el)return;
+  el.classList.remove("active");el.classList.add("done","updated");
+  setTimeout(()=>el.classList.remove("updated"),1400);
+  const s=STAGES[i];
+  el.querySelector(".step-body").innerHTML=`<div>${s.done}</div>`+(s.note?`<div class="consider"><b>УЧЕСТЬ · </b>${s.note}</div>`:"");
+}
+function stepActive(i){const el=document.querySelectorAll("#steps .step")[i];if(el){el.classList.add("active","updated");
+  el.querySelector(".step-body").innerHTML=`<span class="waiting">Идёт сейчас…</span>`;setTimeout(()=>el.classList.remove("updated"),1400);}}
+
+function startRun(){
+  const obj=document.getElementById("fObj").value||"Теплоснабжение";
+  const city=document.getElementById("fCity").value||"г. Сарань";
+  const year=document.getElementById("fYear").value||"2025";
+  window._job={obj,city,year};
+  jobActive=true;
+  document.getElementById("statusSub").textContent=`${obj} · ${city} · период ${year}`;
+  document.getElementById("ptotal").textContent=total;
+  buildSteps();go("status");runToPause();
+}
+function runToPause(){
+  clearInterval(timer);done=0;
+  document.getElementById("bar").style.width="0%";
+  document.getElementById("pcount").textContent="0";
+  document.getElementById("alert").style.display="none";
+  document.getElementById("spin").style.display="block";
+  document.getElementById("nowStep").textContent="Распознаю документы…";
+  setLive("gold","<b>Идёт расчёт</b> · распознаю документы");
+  document.getElementById("statusDot").className="livedot gold pulse";
+  timer=setInterval(()=>{
+    done+=Math.max(2,Math.round(Math.random()*7));
+    if(done>=137){done=137;paint();
+      document.getElementById("spin").style.display="none";
+      document.getElementById("nowStep").textContent="Пауза: нужен ваш ответ";
+      document.getElementById("alert").style.display="flex";
+      document.getElementById("statusDot").className="livedot red pulse";
+      const st=document.querySelectorAll("#steps .step")[0];st.classList.add("updated");
+      setTimeout(()=>st.classList.remove("updated"),1400);
+      setLive("red","<b>Нужна ваша помощь</b> · есть нераспознанные документы");
+      clearInterval(timer);return;}
+    paint();
+  },240);
+}
+function paint(){document.getElementById("pcount").textContent=Math.min(done,total);
+  document.getElementById("bar").style.width=(Math.min(done,total)/total*100)+"%";}
+
+/* ---------- unreadable swiper ---------- */
+let docs=[
+  {title:"Счёт-фактура",file:"IMG_2231.jpg",why:"низкое качество скана",type:"Счёт-фактура",num:"",date:"",sum:"",excluded:false,autoExcluded:false,reason:""},
+  {title:"Товарный чек",file:"foto_chek_04.jpg",why:"смазано фото",type:"Чек",num:"",date:"",sum:"",excluded:false,autoExcluded:false,reason:""},
+  {title:"Акт выполненных работ",file:"akt_smyty.pdf",why:"часть страницы обрезана",type:"Акт",num:"",date:"",sum:"",excluded:false,autoExcluded:false,reason:""},
+  {title:"Приказ об утверждении тарифов",file:"Prikaz_0223104952.pdf",why:"печать перекрывает сумму",type:"Приказ",num:"90",date:"",sum:"",
+    excluded:true,autoExcluded:true,reason:"Документ является приказом об утверждении тарифов, а не финансовым документом с суммой к оплате — исключён из сметы автоматически"},
+  {title:"Кассовый чек",file:"chek_end.jpg",why:"выцвел, плохо видно",type:"Чек",num:"",date:"",sum:"",excluded:false,autoExcluded:false,reason:""}
+];
+let cur=0;
+function receiptSVG(d,seed){
+  const lines=[];for(let i=0;i<6;i++){const w=40+((seed*7+i*13)%45);lines.push(`<rect x="18" y="${58+i*20}" width="${w}%" height="6" rx="3" fill="#e4e2dc"/>`);}
+  return `<svg viewBox="0 0 240 220" xmlns="http://www.w3.org/2000/svg"><rect width="240" height="220" fill="#fff"/><rect x="18" y="16" width="150" height="10" rx="4" fill="#cfcdc6"/><rect x="18" y="34" width="90" height="7" rx="3" fill="#e0ded8"/>${lines.join("")}<rect x="18" y="184" width="70" height="12" rx="3" fill="#d8c98f"/><rect x="150" y="184" width="72" height="12" rx="3" fill="#cfcdc6"/></svg>`;
+}
+function fieldsHTML(d,prefix){
+  return `<div class="field"><label>Тип документа</label><select oninput="save('${prefix}','type',this.value)">
+      ${["Счёт-фактура","Акт","Чек","Договор"].map(o=>`<option${o===d.type?" selected":""}>${o}</option>`).join("")}</select></div>
+    <div class="field"><label>Номер</label><input type="text" value="${d.num}" placeholder="№ …" oninput="save('${prefix}','num',this.value)"></div>
+    <div class="field"><label>Дата</label><input type="text" value="${d.date}" placeholder="дд.мм.гггг" oninput="save('${prefix}','date',this.value)"></div>
+    <div class="field"><label>Сумма, ₸</label><input type="text" value="${d.sum}" placeholder="0,00" oninput="save('${prefix}','sum',this.value)"></div>`;
+}
+function save(where,key,val){docs[cur][key]=val;refreshProgress();
+  if(where==="zoom"){/* keep main in sync when reopened */}}
+function isFilled(d){return !!(d.num.trim()&&d.sum.trim());}
+function isResolved(d){return d.excluded||isFilled(d);}
+function toggleExclude(state){
+  const d=docs[cur];
+  d.excluded=state;
+  if(!state){d.autoExcluded=false;d.reason="";}
+  renderCard(cur,true);
+}
+function refreshProgress(){
+  const left=docs.filter(d=>!isResolved(d)).length;
+  document.getElementById("curLeft").textContent=left;
+  document.getElementById("finishUnread").disabled=left>0;
+  document.querySelectorAll("#dots i").forEach((el,i)=>{
+    el.classList.toggle("filled",isFilled(docs[i])&&!docs[i].excluded);
+    el.classList.toggle("excluded",docs[i].excluded);
+    el.classList.toggle("on",i===cur);
+  });
+}
+function renderCard(i,instant){
+  const d=docs[i];const card=document.getElementById("card");
+  const excluded=d.excluded;
+  const badge=excluded?`<div class="exbadge${d.autoExcluded?" auto":""}">${d.autoExcluded?"Исключено системой":"Исключено вручную"}</div>`:"";
+  const capLine=excluded
+    ? (d.autoExcluded?"не финансовый документ — сумма к оплате не применима":"вы убрали этот документ из расчёта")
+    : "не распознано: "+d.why;
+  const bodyRight=excluded
+    ? `<div class="entry">
+        <div class="eh">${d.title}</div>
+        <div class="es exs">${d.autoExcluded?"Система определила, что это не финансовый документ, и убрала его из сметы":"Документ убран из расчёта — он не войдёт в смету"}</div>
+        ${d.reason?`<div class="exreason">${d.reason}</div>`:""}
+        <button class="btn ghost sm" style="margin-top:14px" onclick="toggleExclude(false)">↺ Вернуть в расчёт</button>
+      </div>`
+    : `<div class="entry">
+        <div class="eh">${d.title}</div>
+        <div class="es">Впишите данные с этого документа — они сохранятся именно к нему</div>
+        <div class="miniform">${fieldsHTML(d,"main")}</div>
+        <button class="btn ghost sm excludebtn" onclick="toggleExclude(true)">✕ Убрать документ из цикла</button>
+      </div>`;
+  const html=`<div class="docview${excluded?" excluded":""}">
+      ${badge}
+      <div class="imgbox" onclick="openZoom()">${receiptSVG(d,i+1)}<div class="zc">🔍 нажмите, чтобы увеличить</div></div>
+      <div class="cap"><b>${d.file}</b><br>${capLine}</div>
+    </div>
+    ${bodyRight}`;
+  if(instant){card.innerHTML=html;}
+  else{card.innerHTML=html;}
+  document.getElementById("curIdx").textContent=i+1;
+  document.getElementById("curTotal").textContent=docs.length;
+  document.getElementById("prevBtn").disabled=i===0;
+  document.getElementById("nextBtn").disabled=i===docs.length-1;
+  buildDots();refreshProgress();
+}
+function buildDots(){const c=document.getElementById("dots");if(c.children.length!==docs.length){c.innerHTML=docs.map(()=>"<i></i>").join("");}}
+function move(dir){
+  const ni=cur+dir;if(ni<0||ni>=docs.length)return;
+  const card=document.getElementById("card");
+  card.style.transition="transform .2s ease,opacity .2s ease";
+  card.style.transform=`translateX(${dir>0?"-36px":"36px"})`;card.style.opacity="0";
+  setTimeout(()=>{
+    cur=ni;renderCard(cur,true);
+    card.style.transition="none";card.style.transform=`translateX(${dir>0?"36px":"-36px"})`;
+    requestAnimationFrame(()=>{card.style.transition="transform .2s ease,opacity .2s ease";card.style.transform="none";card.style.opacity="1";});
+  },200);
+}
+/* swipe drag */
+let sx=0,dragging=false;
+const deck=document.querySelector(".deckwrap");
+deck.addEventListener("pointerdown",e=>{if(e.target.closest("input,select,button"))return;sx=e.clientX;dragging=true;});
+window.addEventListener("pointerup",e=>{if(!dragging)return;dragging=false;const dx=e.clientX-sx;
+  const card=document.getElementById("card");card.style.transform="";
+  if(dx<-60)move(1);else if(dx>60)move(-1);});
+deck.addEventListener("pointermove",e=>{if(!dragging)return;const dx=e.clientX-sx;
+  document.getElementById("card").style.transform=`translateX(${dx*.4}px)`;});
+window.addEventListener("keydown",e=>{if(!document.getElementById("unread").classList.contains("on"))return;
+  if(e.key==="ArrowRight")move(1);if(e.key==="ArrowLeft")move(-1);});
+
+/* zoom */
+function openZoom(){
+  const d=docs[cur];
+  document.getElementById("zimg").innerHTML=receiptSVG(d,cur+1).replace('filter','');
+  document.getElementById("zTitle").textContent=d.title;
+  if(d.excluded){
+    document.getElementById("zSub").textContent=d.file+" · "+(d.autoExcluded?"исключено системой: "+d.reason:"исключено вручную");
+    document.getElementById("zForm").innerHTML=`<div style="grid-column:1/-1"><button class="btn ghost sm" onclick="toggleExclude(false);closeZoom();">↺ Вернуть в расчёт</button></div>`;
+  }else{
+    document.getElementById("zSub").textContent=d.file+" · не распознано: "+d.why;
+    document.getElementById("zForm").innerHTML=fieldsHTML(d,"zoom")+`<div style="grid-column:1/-1;margin-top:4px"><button class="btn ghost sm excludebtn" onclick="toggleExclude(true);closeZoom();">✕ Убрать документ из цикла</button></div>`;
+  }
+  document.getElementById("zoom").classList.add("on");
+}
+function closeZoom(){document.getElementById("zoom").classList.remove("on");renderCard(cur,true);}
+document.getElementById("zoom").addEventListener("click",e=>{if(e.target.id==="zoom")closeZoom();});
+
+/* resolve all → finish run → results */
+function resolveAll(){
+  go("status");
+  document.getElementById("alert").style.display="none";
+  document.getElementById("spin").style.display="block";
+  document.getElementById("statusDot").className="livedot gold pulse";
+  setLive("gold","<b>Идёт расчёт</b> · продолжаю обработку");
+  const steps=document.querySelectorAll("#steps .step");let n=137;let last=-1;
+  timer=setInterval(()=>{
+    n+=Math.max(4,Math.round(Math.random()*9));paint2(n);
+    const idx=Math.min(5,Math.floor((n-137)/(total-137)*6));
+    if(idx!==last){for(let i=0;i<idx;i++)stepDone(i);stepActive(idx);
+      document.getElementById("nowStep").textContent=STAGES[idx].lab+"…";
+      setLive("gold","<b>Идёт расчёт</b> · "+STAGES[idx].lab.toLowerCase());last=idx;}
+    if(n>=total){clearInterval(timer);for(let i=0;i<6;i++)stepDone(i);
+      document.getElementById("nowStep").textContent="Готово";
+      document.getElementById("spin").style.display="none";
+      document.getElementById("statusDot").className="livedot green";
+      setLive("green","<b>Смета готова</b>");addTask();setTimeout(()=>go("result"),700);}
+  },230);
+}
+function paint2(n){document.getElementById("pcount").textContent=Math.min(n,total);
+  document.getElementById("bar").style.width=(Math.min(n,total)/total*100)+"%";}
+document.getElementById("resSub").textContent="";
+
+/* tasks list fills from real runs */
+function addTask(){
+  const j=window._job||{obj:"Теплоснабжение",city:"г. Сарань",year:"2025"};
+  document.getElementById("resSub").textContent=`${j.obj} · ${j.city} · период ${j.year}`;
+  document.getElementById("emptyState").style.display="none";
+  const list=document.getElementById("taskList");
+  const el=document.createElement("div");el.className="task";
+  el.innerHTML=`<div><div class="tt">${j.obj} · ${j.city}</div><div class="ts">Период ${j.year} · ${total} документов</div></div><span class="pill ok"><span class="d"></span>Готово к сдаче</span>`;
+  el.onclick=()=>go("result");
+  list.prepend(el);
+}
+</script>

@@ -1,0 +1,55 @@
+{
+  "name": "Экономист — №5 Извлечение позиций из документа (Vertex)",
+  "description": "Принимает распознанный финансовый документ и извлекает из него КАЖДУЮ строку затрат (в отличие от Intake, который только определяет тип и шапку документа).",
+  "nodes": [
+    { "name": "Приём документа", "type": "n8n-nodes-base.webhook", "parameters": { "httpMethod": "POST", "path": "extract-document", "responseMode": "responseNode" } },
+    {
+      "name": "Проверка ключа",
+      "type": "n8n-nodes-base.if",
+      "parameters": { "conditions": { "conditions": [ { "leftValue": "={{ $json.headers['x-api-key'] }}", "rightValue": "REDACTED_API_KEY", "operator": { "type": "string", "operation": "equals" } } ], "combinator": "and" } }
+    },
+    { "name": "Скачать документ", "type": "n8n-nodes-base.httpRequest", "parameters": { "url": "={{ $json.body.file_url }}" }, "retryOnFail": true, "maxTries": 3, "waitBetweenTries": 2000 },
+    {
+      "name": "Кодировать в base64",
+      "type": "n8n-nodes-base.code",
+      "parameters": { "jsCode": "const buffer = await this.helpers.getBinaryDataBuffer(0, 'data');\nconst base64 = buffer.toString('base64');\nconst body = ($('Приём документа').item.json.body) || {};\nlet mime = body.mime_type || ($input.item.binary && $input.item.binary.data && $input.item.binary.data.mimeType) || 'image/jpeg';\nreturn { json: { file_base64: base64, file_mime: mime, doc_id: body.doc_id || null } };" }
+    },
+    {
+      "name": "Подписать JWT",
+      "type": "n8n-nodes-base.jwt",
+      "parameters": { "useJson": true, "claimsJson": "={{ { iss: '<SERVICE_ACCOUNT_EMAIL>', scope: 'https://www.googleapis.com/auth/cloud-platform', aud: 'https://oauth2.googleapis.com/token', iat: Math.floor(Date.now()/1000), exp: Math.floor(Date.now()/1000) + 3600 } }}" },
+      "credentials": { "jwtAuth": "JWT Auth account (Google service account)" }
+    },
+    { "name": "Получить токен Vertex", "type": "n8n-nodes-base.httpRequest", "parameters": { "method": "POST", "url": "https://oauth2.googleapis.com/token" }, "retryOnFail": true, "maxTries": 3, "waitBetweenTries": 2000 },
+    {
+      "name": "Извлечь позиции (Vertex)",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-central1-aiplatform.googleapis.com/v1/projects/<GCP_PROJECT_ID>/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent",
+        "jsonBody": "см. prompts/05-extraction-prompt.md — полный текст промпта",
+        "options": { "timeout": 45000 }
+      },
+      "retryOnFail": true, "maxTries": 5, "waitBetweenTries": 15000
+    },
+    {
+      "name": "Разобрать позиции",
+      "type": "n8n-nodes-base.code",
+      "parameters": {
+        "jsCode": "const doc = ($('Приём документа').item.json.body) || {};\nconst resp = $json;\nlet text = '';\ntry { text = resp.candidates[0].content.parts[0].text; } catch (e) {}\nlet arr = [];\ntry { const p = JSON.parse(text); arr = Array.isArray(p) ? p : (p.positions || p.items || []); } catch (e) { arr = []; }\nconst positions = arr.map((x, i) => ({\n  id: (doc.doc_id || 'doc') + '-' + (i + 1),\n  name: x.name || null,\n  amount: (x.amount != null ? x.amount : null),\n  vat: (x.vat != null ? x.vat : null),\n  doc_number: x.doc_number || null,\n  doc_date: x.doc_date || null,\n  supplier: x.supplier || null\n}));\nreturn { json: { doc_id: doc.doc_id || null, positions: positions, count: positions.length, model: 'gemini-2.5-flash' } };"
+      }
+    },
+    { "name": "Ответ", "type": "n8n-nodes-base.respondToWebhook", "parameters": { "respondWith": "json", "responseBody": "={{ $json }}" } },
+    { "name": "Ответ 401", "type": "n8n-nodes-base.respondToWebhook", "parameters": { "respondWith": "json", "responseCode": 401, "responseBody": "={{ { error: 'unauthorized' } }}" } }
+  ],
+  "connections": {
+    "Приём документа": ["Проверка ключа"],
+    "Проверка ключа": ["Скачать документ", "Ответ 401"],
+    "Скачать документ": ["Кодировать в base64"],
+    "Кодировать в base64": ["Подписать JWT"],
+    "Подписать JWT": ["Получить токен Vertex"],
+    "Получить токен Vertex": ["Извлечь позиции (Vertex)"],
+    "Извлечь позиции (Vertex)": ["Разобрать позиции"],
+    "Разобрать позиции": ["Ответ"]
+  }
+}

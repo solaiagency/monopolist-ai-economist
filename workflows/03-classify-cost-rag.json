@@ -1,0 +1,79 @@
+{
+  "name": "Экономист — №3 Классификация затраты (RAG по приказу №90)",
+  "description": "Принимает одну позицию затрат, считает эмбеддинг запроса (Vertex), ищет релевантные пункты приказа №90 в Pinecone и просит Gemini классифицировать затрату строго по найденным нормам (RAG, без домыслов модели).",
+  "nodes": [
+    { "name": "Приём позиции", "type": "n8n-nodes-base.webhook", "parameters": { "httpMethod": "POST", "path": "classify-position", "responseMode": "responseNode" } },
+    {
+      "name": "Проверка ключа",
+      "type": "n8n-nodes-base.if",
+      "parameters": { "conditions": { "conditions": [ { "leftValue": "={{ $json.headers['x-api-key'] }}", "rightValue": "REDACTED_API_KEY", "operator": { "type": "string", "operation": "equals" } } ], "combinator": "and" } }
+    },
+    {
+      "name": "Подписать JWT",
+      "type": "n8n-nodes-base.jwt",
+      "parameters": { "useJson": true, "claimsJson": "={{ { iss: '<SERVICE_ACCOUNT_EMAIL>', scope: 'https://www.googleapis.com/auth/cloud-platform', aud: 'https://oauth2.googleapis.com/token', iat: Math.floor(Date.now()/1000), exp: Math.floor(Date.now()/1000) + 3600 } }}" },
+      "credentials": { "jwtAuth": "JWT Auth account (Google service account)" }
+    },
+    { "name": "Получить токен Vertex", "type": "n8n-nodes-base.httpRequest", "parameters": { "method": "POST", "url": "https://oauth2.googleapis.com/token" }, "retryOnFail": true, "maxTries": 3, "waitBetweenTries": 2000 },
+    {
+      "name": "Эмбеддинг запроса (Vertex)",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-central1-aiplatform.googleapis.com/v1/projects/<GCP_PROJECT_ID>/locations/us-central1/publishers/google/models/text-multilingual-embedding-002:predict",
+        "jsonBody": "={{ JSON.stringify({ instances: [ { content: $('Приём позиции').item.json.body.text } ] }) }}"
+      },
+      "retryOnFail": true, "maxTries": 5, "waitBetweenTries": 5000
+    },
+    {
+      "name": "Поиск в Pinecone",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "method": "POST",
+        "url": "https://<pinecone-index-host>/query",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "jsonBody": "={{ JSON.stringify({ namespace: 'prikaz-90', topK: 6, includeMetadata: true, vector: $json.predictions[0].embeddings.values }) }}"
+      },
+      "credentials": { "httpHeaderAuth": "Pinecone (Api-Key)" },
+      "retryOnFail": true, "maxTries": 3, "waitBetweenTries": 2000
+    },
+    {
+      "name": "Собрать промпт",
+      "type": "n8n-nodes-base.code",
+      "parameters": {
+        "jsCode": "const matches = $json.matches || [];\nconst pos = $('Приём позиции').item.json.body || {};\nconst norms = matches.map((m, i) => `[${i+1}] ${(m.metadata && m.metadata.glava) || ''}${(m.metadata && m.metadata.punkt) ? (' п.' + m.metadata.punkt) : ''}: ${(m.metadata && m.metadata.text) || ''}`).join('\\n\\n');\nconst prompt = `см. prompts/03-classification-prompt.md — полный шаблон промпта с найденными нормами и данными затраты`;\nreturn { json: { prompt: prompt, norms_count: matches.length } };"
+      }
+    },
+    {
+      "name": "Классификация (Gemini)",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-central1-aiplatform.googleapis.com/v1/projects/<GCP_PROJECT_ID>/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent",
+        "jsonBody": "={{ JSON.stringify({ contents: [ { role: 'user', parts: [ { text: $json.prompt } ] } ], generationConfig: { temperature: 0, responseMimeType: 'application/json' } }) }}"
+      },
+      "retryOnFail": true, "maxTries": 5, "waitBetweenTries": 5000
+    },
+    {
+      "name": "Разобрать ответ",
+      "type": "n8n-nodes-base.code",
+      "parameters": {
+        "jsCode": "const doc = $('Приём позиции').item.json.body || {};\nconst resp = $json;\nlet text = '';\ntry { text = resp.candidates[0].content.parts[0].text; } catch (e) {}\nlet data = {};\ntry { data = JSON.parse(text); } catch (e) { data = { признак: 'спорно', обоснование: 'Модель вернула нечитаемый ответ' }; }\nreturn { json: {\n  doc_id: doc.doc_id || null,\n  position: doc.text || null,\n  amount: doc.amount || null,\n  classification: data,\n  needs_review: (data.признак !== 'учитывается') || ((data.confidence != null) && data.confidence < 0.8),\n  model: 'gemini-2.5-flash'\n} };"
+      }
+    },
+    { "name": "Ответ", "type": "n8n-nodes-base.respondToWebhook", "parameters": { "respondWith": "json", "responseBody": "={{ $json }}" } },
+    { "name": "Ответ 401", "type": "n8n-nodes-base.respondToWebhook", "parameters": { "respondWith": "json", "responseCode": 401, "responseBody": "={{ { error: 'unauthorized' } }}" } }
+  ],
+  "connections": {
+    "Приём позиции": ["Проверка ключа"],
+    "Проверка ключа": ["Подписать JWT", "Ответ 401"],
+    "Подписать JWT": ["Получить токен Vertex"],
+    "Получить токен Vertex": ["Эмбеддинг запроса (Vertex)"],
+    "Эмбеддинг запроса (Vertex)": ["Поиск в Pinecone"],
+    "Поиск в Pinecone": ["Собрать промпт"],
+    "Собрать промпт": ["Классификация (Gemini)"],
+    "Классификация (Gemini)": ["Разобрать ответ"],
+    "Разобрать ответ": ["Ответ"]
+  }
+}

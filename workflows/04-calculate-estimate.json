@@ -1,0 +1,27 @@
+{
+  "name": "Экономист — №4 Расчёт сметы (дедуп + суммы по статьям)",
+  "description": "Детерминированный расчёт без ИИ. Принимает классифицированные позиции затрат, убирает дубли по номеру документа, суммирует по статьям только позиции с признаком «учитывается», отдельно возвращает исключённое и спорное.",
+  "nodes": [
+    { "name": "Приём позиций сметы", "type": "n8n-nodes-base.webhook", "parameters": { "httpMethod": "POST", "path": "calc-smeta", "responseMode": "responseNode" } },
+    {
+      "name": "Проверка ключа",
+      "type": "n8n-nodes-base.if",
+      "parameters": { "conditions": { "conditions": [ { "leftValue": "={{ $json.headers['x-api-key'] }}", "rightValue": "REDACTED_API_KEY", "operator": { "type": "string", "operation": "equals" } } ], "combinator": "and" } }
+    },
+    {
+      "name": "Расчёт сметы",
+      "type": "n8n-nodes-base.code",
+      "parameters": {
+        "jsCode": "const body = $json.body || {};\nconst positions = Array.isArray(body.positions) ? body.positions : [];\n\nconst parseAmt = (a) => { const n = parseFloat(String(a == null ? '' : a).replace(/\\s/g, '').replace(',', '.')); return isNaN(n) ? 0 : n; };\nconst round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;\nconst getPriznak = (p) => (p.classification && p.classification.признак) || p.признак || 'спорно';\nconst getStatya = (p) => (p.classification && p.classification.статья) || p.статья || 'Прочее';\nconst getName = (p) => p.name || getStatya(p);\nconst getObosn = (p) => (p.classification && p.classification.обоснование) || p.обоснование || null;\nconst getSsylka = (p) => (p.classification && p.classification.ссылка) || p.ссылка || null;\n\nconst seen = {};\nconst dupes = [];\nconst unique = [];\nfor (const p of positions) {\n  const docNum = p.doc_number ? String(p.doc_number).trim() : '';\n  const name = (p.name || (p.classification && p.classification.статья) || '').trim().toLowerCase();\n  const amt = parseAmt(p.amount);\n  const k = docNum ? `${docNum}::${name}::${amt}` : null;\n  if (k && seen[k]) { dupes.push(p); continue; }\n  if (k) seen[k] = true;\n  unique.push(p);\n}\n\nconst byStatya = {};\nlet itogo = 0;\nlet uchteno = 0;\nconst excluded = [];\nconst disputed = [];\nconst detail = [];\nfor (const p of unique) {\n  const amt = parseAmt(p.amount);\n  const priznak = getPriznak(p);\n  const statya = getStatya(p);\n  const name = getName(p);\n  const obosn = getObosn(p);\n  const ssylka = getSsylka(p);\n\n  detail.push({ id: p.id || null, наименование: name, статья: statya, признак: priznak, сумма: amt, doc_number: p.doc_number || null, обоснование: obosn, ссылка: ssylka });\n\n  if (priznak === 'учитывается') {\n    byStatya[statya] = round2((byStatya[statya] || 0) + amt);\n    itogo = round2(itogo + amt);\n    uchteno += 1;\n  } else if (priznak === 'не_учитывается') {\n    excluded.push({ статья: statya, наименование: name, сумма: amt, id: p.id, doc_number: p.doc_number || null, обоснование: obosn, ссылка: ssylka });\n  } else {\n    disputed.push({ статья: statya, наименование: name, сумма: amt, id: p.id, doc_number: p.doc_number || null, обоснование: obosn, ссылка: ssylka });\n  }\n}\n\nreturn { json: {\n  job_id: body.job_id || null,\n  смета: { по_статьям: byStatya, итого: itogo },\n  исключено: excluded,\n  спорные_на_проверку: disputed,\n  дубликаты: dupes,\n  все_позиции: detail,\n  всего_позиций: positions.length,\n  учтено_позиций: uchteno\n} };"
+      }
+    },
+    { "name": "Ответ", "type": "n8n-nodes-base.respondToWebhook", "parameters": { "respondWith": "json", "responseBody": "={{ $json }}" } },
+    { "name": "Ответ 401", "type": "n8n-nodes-base.respondToWebhook", "parameters": { "respondWith": "json", "responseCode": 401, "responseBody": "={{ { error: 'unauthorized' } }}" } }
+  ],
+  "connections": {
+    "Приём позиций сметы": ["Проверка ключа"],
+    "Проверка ключа": ["Расчёт сметы", "Ответ 401"],
+    "Расчёт сметы": ["Ответ"]
+  },
+  "notes": "Единственный воркфлоу конвейера без обращения к ИИ — деньги считает код, результат воспроизводим."
+}

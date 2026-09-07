@@ -1,0 +1,68 @@
+{
+  "name": "Экономист — №6 Оркестратор (главный конвейер)",
+  "description": "Главный конвейер: принимает список позиций затрат по объекту, для каждой вызывает воркфлоу №3 (RAG-классификация), собирает результаты и вызывает воркфлоу №4 (расчёт), возвращая готовую смету.",
+  "nodes": [
+    { "name": "Запуск сметы", "type": "n8n-nodes-base.webhook", "parameters": { "httpMethod": "POST", "path": "run-smeta", "responseMode": "responseNode" } },
+    {
+      "name": "Проверка ключа",
+      "type": "n8n-nodes-base.if",
+      "parameters": { "conditions": { "conditions": [ { "leftValue": "={{ $json.headers['x-api-key'] }}", "rightValue": "REDACTED_API_KEY", "operator": { "type": "string", "operation": "equals" } } ], "combinator": "and" } }
+    },
+    { "name": "Настройки", "type": "n8n-nodes-base.set", "parameters": { "assignments": { "assignments": [ { "name": "base_url", "value": "https://<n8n-host>", "type": "string" } ] } } },
+    {
+      "name": "Развернуть позиции",
+      "type": "n8n-nodes-base.code",
+      "parameters": { "jsCode": "const body = ($('Запуск сметы').first().json.body) || {};\nconst positions = Array.isArray(body.positions) ? body.positions : [];\nreturn positions.map(p => ({ json: p }));" }
+    },
+    {
+      "name": "Классификация (№3)",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Настройки').first().json.base_url }}/webhook/classify-position",
+        "jsonBody": "={{ JSON.stringify({ doc_id: $json.id, text: $json.name, amount: $json.amount, service_type: ($('Запуск сметы').first().json.body.service_type || '') }) }}",
+        "headerParameters": { "parameters": [ { "name": "x-api-key", "value": "REDACTED_API_KEY" } ] },
+        "options": { "batching": { "batch": { "batchSize": 1, "batchInterval": 4000 } }, "timeout": 60000 }
+      },
+      "retryOnFail": true, "maxTries": 5, "waitBetweenTries": 5000, "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Ошибка классификации",
+      "type": "n8n-nodes-base.code",
+      "parameters": { "jsCode": "const orig = ($('Развернуть позиции').item.json) || {};\nreturn { json: {\n  doc_id: orig.id || null,\n  position: orig.name || null,\n  amount: orig.amount,\n  classification: { статья: 'Прочее', признак: 'спорно', обоснование: 'Сервис классификации недоступен (квота/сеть) после повторных попыток — требуется ручная проверка', confidence: 0 },\n  needs_review: true,\n  model: 'error-fallback'\n} };" }
+    },
+    {
+      "name": "Собрать классификацию",
+      "type": "n8n-nodes-base.code",
+      "parameters": {
+        "jsCode": "const cls = ($json.classification) || {};\nconst orig = ($('Развернуть позиции').item.json) || {};\nreturn { json: {\n  id: orig.id || null,\n  name: orig.name || null,\n  статья: cls.статья || 'Прочее',\n  признак: cls.признак || 'спорно',\n  amount: (orig.amount != null ? orig.amount : $json.amount),\n  doc_number: orig.doc_number || null,\n  обоснование: cls.обоснование || null,\n  ссылка: cls.ссылка || null,\n  вид_услуги: cls.вид_услуги || null,\n  confidence: (cls.confidence != null ? cls.confidence : null)\n} };"
+      }
+    },
+    { "name": "В массив", "type": "n8n-nodes-base.code", "parameters": { "jsCode": "const positions = $input.all().map(i => i.json);\nreturn [{ json: { positions } }];" } },
+    {
+      "name": "Расчёт (№4)",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Настройки').first().json.base_url }}/webhook/calc-smeta",
+        "jsonBody": "={{ JSON.stringify({ job_id: ($('Запуск сметы').first().json.body.job_id || null), positions: $json.positions }) }}",
+        "headerParameters": { "parameters": [ { "name": "x-api-key", "value": "REDACTED_API_KEY" } ] },
+        "options": { "timeout": 60000 }
+      },
+      "retryOnFail": true, "maxTries": 5, "waitBetweenTries": 5000
+    },
+    { "name": "Ответ", "type": "n8n-nodes-base.respondToWebhook", "parameters": { "respondWith": "json", "responseBody": "={{ $json }}" } },
+    { "name": "Ответ 401", "type": "n8n-nodes-base.respondToWebhook", "parameters": { "respondWith": "json", "responseCode": 401, "responseBody": "={{ { error: 'unauthorized' } }}" } }
+  ],
+  "connections": {
+    "Запуск сметы": ["Проверка ключа"],
+    "Проверка ключа": ["Настройки", "Ответ 401"],
+    "Настройки": ["Развернуть позиции"],
+    "Развернуть позиции": ["Классификация (№3)"],
+    "Классификация (№3)": ["Собрать классификацию", "Ошибка классификации"],
+    "Ошибка классификации": ["Собрать классификацию"],
+    "Собрать классификацию": ["В массив"],
+    "В массив": ["Расчёт (№4)"],
+    "Расчёт (№4)": ["Ответ"]
+  }
+}
